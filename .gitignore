@@ -1,0 +1,16 @@
+# Secrets — never commit
+API.txt
+.streamlit/secrets.toml
+.env
+
+# Local data from the old single-file store (user data now lives in each session)
+data_store.json
+
+# Local tooling
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

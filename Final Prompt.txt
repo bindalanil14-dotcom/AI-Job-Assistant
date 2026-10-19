@@ -1,0 +1,121 @@
+You are building a Python-only, Streamlit-based "AI Job Application Assistant with
+Application Tracker". The agent behaviour must come from markdown specification files
+injected into the system prompt on every LLM call — NOT from hardcoded logic.
+
+GOAL
+A runnable Streamlit app with FOUR tabs that helps a job seeker: analyse a job
+description, intelligently match it against an evolving candidate profile, generate a
+tailored resume PDF, track applications through stages, analyse rejections, and learn
+from them so future applications use a refined understanding of the candidate.
+
+---
+
+HARD REQUIREMENTS
+
+1) Python only. Streamlit UI. Single entry point: `streamlit run app.py`.
+
+2) Inputs / files (all in project root):
+   - "API.txt" → OpenAI API key. If missing or empty → styled error + stop.
+   - "skills/*.md" → agent specification files (global rules + one card per agent).
+   - "data_store.json" → single JSON file for ALL data (auto-created). No database.
+
+3) Four tabs:
+   TAB 1 APPLY:
+     - Three inputs: (a) Candidate Profile upload accepting .txt/.pdf/.docx;
+       (b) optional Reference Resume upload accepting .pdf/.docx (style only, never
+       copy content; fall back to a default template if absent);
+       (c) a large Job Description (JD) textbox.
+     - After inputs, populate & display: Company Name (auto, editable), Job Role
+       (auto, editable), Skills Required (extracted, editable list), User Profile
+       Skills (from the evolving profile), Skill Match Percentage (auto), JD.
+     - A "Prepare Resume" button DISABLED until all SEVEN conditions hold: profile
+       uploaded, JD pasted, Company filled, Role filled, Skills Required extracted,
+       Profile Skills extracted, Skill Match calculated.
+     - Generate a tailored resume PDF with ReportLab; make it downloadable.
+     - A "Submitted" button (labelled Submitted, not Submit) DISABLED until the resume
+       has been generated AND downloaded. Clicking it logs the application to Tracking
+       with status Submitted (green blinking indicator).
+
+   TAB 2 TRACKING:
+     - Table/cards of all active applications: Company, Role, Skills Required,
+       Skill Match %, viewable JD, Current Status, and four buttons:
+       Submitted, Interview, Selected, Not Selected.
+     - Submitted: auto-set when added; green blinking indicator.
+     - Interview: clickable after Submitted.
+     - Selected: if Interview was NOT clicked, show a confirmation popup
+       (OK / Cancel) before marking Selected.
+     - Not Selected: ALWAYS active; confirmation popup (OK / Cancel); on OK the
+       application leaves Tracking and moves to the Not Selected tab.
+
+   TAB 3 NOT SELECTED:
+     - One row per rejected application: Company, Job Title, Experience Match %,
+       a large free-text Rejection Notes box, and a per-row Analyze button.
+     - Analyze reads the notes + JD + match data, performs AI analysis (skill gaps,
+       struggled topics, weaker experience, patterns), shows a brief summary, and
+       UPDATES the internal candidate profile state in the JSON.
+
+   TAB 4 GLOBAL ANALYSIS:
+     - Looks ACROSS all rejections: recurring skill gaps, common unanswered topics,
+       consistent weak areas, and a plain-language summary recommendation.
+     - Meaningful empty state until there are enough rejections to find patterns.
+
+4) THE LIVING PROFILE (core feature):
+   - Store a `current_profile_state` object in the JSON. It starts as the analysis of
+     the uploaded document and EVOLVES after each rejection analysis (skill levels
+     downgraded, learning areas added).
+   - Tab 1 skill matching and resume generation MUST read from this evolving object,
+     not the raw uploaded file. Track a profile_history of what changed.
+
+5) INTELLIGENT SKILL MATCH (beyond keywords):
+   - Use embeddings (OpenAI text-embedding-3-small) to compute semantic similarity
+     between JD skills and profile skills, so "ML" matches "Machine Learning".
+   - Weight by profile skill level, project relevance, and experience alignment.
+   - Output strong/moderate/missing buckets and an honest 0–100 percentage.
+
+6) RESUME GENERATION (mandatory, ReportLab):
+   - Tailored summary, reordered skills (lead with role-important strengths),
+     relevant projects. Reflect the evolved profile (de-emphasise weakened skills).
+   - If a reference resume was uploaded, mirror its section ordering/tone/structure.
+   - NEVER expose internal system language (scores, levels, flags) in the PDF.
+
+7) NO HALLUCINATION: every agent grounds its output strictly in the provided inputs.
+   If something is not in the inputs, say so rather than inventing it.
+
+8) CLEAR ALL DATA: a clearly visible button (header). Clicking shows a confirmation
+   popup; on confirm, wipe the JSON completely and reset all four tabs.
+
+---
+
+AGENT SPECIFICATION FILES (the "agent-ness")
+All behaviour comes from markdown files in skills/, read fresh and injected each call:
+   - agent-rules.md            global rules for every agent (grounding, output, tone)
+   - profile-analyst-skill.md  extracts the initial structured profile state
+   - skill-matcher-skill.md    JD analysis + level-aware semantic matching + score
+   - resume-writer-skill.md    tailored resume CONTENT (ReportLab renders it)
+   - rejection-analyst-skill.md per-rejection analysis + precise profile update
+   - global-analyst-skill.md   cross-rejection pattern detection
+Each agent call = global rules + that skill card as the system prompt, forced to
+return strict JSON. Python only orchestrates I/O and parsing.
+
+---
+
+ARCHITECTURE
+   app.py             Streamlit UI (4 tabs, header, dialogs)
+   ai_engine.py       loads skill files, runs each agent, parses JSON
+   rag_pipeline.py    text extraction (.txt/.pdf/.docx), chunking, embeddings,
+                      cosine similarity, semantic skill signal
+   resume_generator.py ReportLab PDF rendering
+   data_store.py      single JSON file: profile state, history, applications
+
+ACCEPTANCE CRITERIA
+   - `streamlit run app.py` runs without errors; missing API.txt → styled stop.
+   - All four tabs functional; status buttons + both confirmation popups work.
+   - Prepare Resume respects all seven activation conditions; Submitted requires a
+     downloaded resume.
+   - Skill matching uses the evolving profile and embeddings (not keyword equality).
+   - Rejection analysis evolves current_profile_state and is visible in later matches.
+   - Resume PDF is clean and professional with no internal flags.
+   - Global Analysis shows cross-rejection patterns or a proper empty state.
+   - Clear All Data wipes the JSON and resets every tab.
+
+Now generate the complete codebase. Every file complete, no placeholders, no TODOs.
