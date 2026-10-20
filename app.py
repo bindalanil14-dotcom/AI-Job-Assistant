@@ -282,8 +282,19 @@ with st.sidebar:
     )
     typed_key = ss.get(key_widget, "").strip()
     api_key = typed_key or (_local_api_key() if provider_id == "openai" else "")
+    if not api_key:
+        st.info(
+            "Add an API key to use the AI features. "
+            f"**Free options:** [Google Gemini ↗]({PROVIDERS['gemini']['key_url']}) and "
+            f"[Groq ↗]({PROVIDERS['groq']['key_url']}) (rate-limited). "
+            "OpenAI and xAI Grok are paid."
+        )
+    elif not api_key.startswith(pcfg["key_prefix"]):
+        st.warning(f"That doesn't look like a {pcfg['name']} API key (they start with "
+                   f"`{pcfg['key_prefix']}`).")
     if typed_key:
-        st.caption("Kept only in this browser session.")
+        st.caption("Kept only in this browser session — never stored on the server or "
+                   "shared. Usage is billed to your own account with the provider.")
     elif api_key:
         st.caption("Using the local API.txt key.")
     st.caption(f"[Get your {pcfg['name']} API key ↗]({pcfg['key_url']})")
@@ -355,30 +366,17 @@ with st.sidebar:
 
 
 # ----------------------------------------------------------------------------
-# API KEY GATE — every user brings their own key, so stop until one is entered
+# API KEY CHECK — each user brings their own key (entered in the sidebar). The app
+# opens normally without one; AI actions point the user to the sidebar instead.
 # ----------------------------------------------------------------------------
-if not api_key:
-    st.markdown(
-        f"""
-        <div class="card">
-          <h3 style="margin-top:0;">🔑 Add an AI provider key to get started</h3>
-          <p>This app uses AI to analyse your profile, match jobs and write resumes.
-             Choose a provider and paste your own API key in the <b>sidebar</b> (open it
-             with the <b>›</b> arrow at the top-left on mobile).</p>
-          <p><b>Free options:</b>
-             <a href="{PROVIDERS['gemini']['key_url']}" target="_blank">Google Gemini ↗</a> and
-             <a href="{PROVIDERS['groq']['key_url']}" target="_blank">Groq ↗</a> both give free
-             API keys (with rate limits). OpenAI and xAI Grok are paid.</p>
-          <p>Your key stays in your browser session only. It is not stored on the server,
-             and any usage is billed to your own account with that provider.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.stop()
-elif not api_key.startswith(pcfg["key_prefix"]):
-    st.warning(f"That doesn't look like a {pcfg['name']} API key (they start with "
-               f"`{pcfg['key_prefix']}`). AI features will fail until a valid key is entered.")
+def _require_key():
+    """True if an API key is set; otherwise shows a short pointer to the sidebar."""
+    if api_key:
+        return True
+    st.warning("🔑 Add your AI provider API key in the **sidebar** to use this "
+               "(open it with the **›** arrow at the top-left). Google Gemini and Groq "
+               "offer free keys.")
+    return False
 
 
 # ----------------------------------------------------------------------------
@@ -402,7 +400,7 @@ with tab_apply:
             "Candidate Profile (.txt, .pdf, .docx)",
             type=["txt", "pdf", "docx"], key="profile_uploader",
         )
-        if profile_file is not None:
+        if profile_file is not None and _require_key():
             sig = f"{profile_file.name}:{profile_file.size}"
             if ss.get("profile_sig") != sig:
                 with st.spinner("Extracting and analysing profile..."):
@@ -424,7 +422,7 @@ with tab_apply:
             "Reference Resume — optional (.pdf, .docx)",
             type=["pdf", "docx"], key="ref_uploader",
         )
-        if ref_file is not None:
+        if ref_file is not None and _require_key():
             sig = f"{ref_file.name}:{ref_file.size}"
             if ss.get("ref_sig") != sig:
                 with st.spinner("Extracting reference resume style & colours..."):
@@ -478,7 +476,7 @@ with tab_apply:
         disabled=not (data.get("profile_uploaded") and jd_text.strip()),
         help="Requires a loaded profile and a pasted job description.",
     )
-    if run_match:
+    if run_match and _require_key():
         with st.spinner("Analysing JD and matching against the living profile..."):
             try:
                 # Two separate, minimal-context calls (per the AI guardrails):
@@ -549,7 +547,7 @@ with tab_apply:
             for label, ok in conditions.items():
                 st.markdown(f"{'✅' if ok else '⬜'} {label}")
 
-        if st.button("📄 Prepare Resume", disabled=not all_ready):
+        if st.button("📄 Prepare Resume", disabled=not all_ready) and _require_key():
             with st.spinner("Generating a detailed, ATS-friendly resume with ReportLab..."):
                 try:
                     ref_style = data.get("reference_style") or {}
@@ -709,7 +707,7 @@ with tab_reject:
                     key=f"notes_{app['id']}", height=130,
                 )
 
-                if st.button("🔬 Analyze", key=f"an_{app['id']}"):
+                if st.button("🔬 Analyze", key=f"an_{app['id']}") and _require_key():
                     with st.spinner("Analysing rejection and updating the living profile..."):
                         try:
                             result = analyze_rejection(
@@ -753,7 +751,7 @@ with tab_global:
     else:
         st.caption(f"Reading {len(analyzed_rejects)} analysed rejection"
                    f"{'s' if len(analyzed_rejects) != 1 else ''} into one consolidated report.")
-        if st.button("🌐 Run Global Analysis"):
+        if st.button("🌐 Run Global Analysis") and _require_key():
             with st.spinner("Generating one consolidated report across all rejections..."):
                 try:
                     result = run_global_analysis(api_key, analyzed_rejects)
@@ -802,7 +800,7 @@ with tab_jobs:
                                  default=list(PROVIDERS.keys()), key="job_sources")
         n = st.slider("Results per source", 5, 20, 10, key="job_n")
 
-        if st.button("🔍 Search Jobs", type="primary"):
+        if st.button("🔍 Search Jobs", type="primary") and _require_key():
             with st.spinner("Fetching live jobs and ranking them against your resume..."):
                 try:
                     jobs, errors, fallback = search_jobs(query, sources or None, n)
