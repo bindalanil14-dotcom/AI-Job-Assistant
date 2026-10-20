@@ -31,7 +31,10 @@ from ai_engine import (
 )
 from resume_generator import generate_resume_pdf
 from job_search import search_jobs, rank_jobs, PROVIDERS
-from llm_provider import get_metrics, reset_metrics, estimate_cost
+from llm_provider import (
+    get_metrics, reset_metrics, estimate_cost, PROVIDERS, DEFAULT_PROVIDER,
+    PROVIDER_CHOICE_KEY, api_key_state_key, model_state_key,
+)
 import evaluation
 
 # ----------------------------------------------------------------------------
@@ -246,20 +249,54 @@ st.markdown(
 # ----------------------------------------------------------------------------
 # SIDEBAR: SETTINGS + LIVING PROFILE STATE
 # ----------------------------------------------------------------------------
+def _remember(widget_key, store_key):
+    """Copy a widget's value into a plain session dict. Streamlit discards the state
+    of widgets that aren't drawn, so this keeps each provider's key and model when
+    the user switches provider and back."""
+    ss.setdefault(store_key, {})[widget_key] = ss.get(widget_key, "")
+
+
 with st.sidebar:
-    st.markdown("### 🔑 OpenAI API Key")
+    st.markdown("### 🔑 AI Provider")
+    # Locally, an API.txt (OpenAI) key makes OpenAI the default; otherwise Gemini (free).
+    ss.setdefault(PROVIDER_CHOICE_KEY, "openai" if _local_api_key() else DEFAULT_PROVIDER)
+    provider_id = st.selectbox(
+        "Provider", list(PROVIDERS), key=PROVIDER_CHOICE_KEY,
+        format_func=lambda p: PROVIDERS[p]["label"],
+    )
+    pcfg = PROVIDERS[provider_id]
+
+    key_widget = api_key_state_key(provider_id)
+    model_widget = model_state_key(provider_id)
+    if key_widget not in ss:
+        ss[key_widget] = ss.get("_saved_api_keys", {}).get(key_widget, "")
+    if model_widget not in ss:
+        ss[model_widget] = ss.get("_saved_models", {}).get(model_widget, pcfg["chat_model"])
+
     st.text_input(
-        "Your OpenAI API key", type="password", key="user_api_key",
-        placeholder="sk-...", label_visibility="collapsed",
+        f"{pcfg['name']} API key", type="password", key=key_widget,
+        placeholder=f"{pcfg['key_prefix']}...",
+        on_change=_remember, args=(key_widget, "_saved_api_keys"),
         help="Used only for your own requests during this session. It is never "
              "saved to disk or shared with other users.",
     )
-    api_key = ss.get("user_api_key", "").strip() or _local_api_key()
-    if ss.get("user_api_key", "").strip():
-        st.caption("Kept only in this browser session. "
-                   "[Get a key](https://platform.openai.com/api-keys)")
+    typed_key = ss.get(key_widget, "").strip()
+    api_key = typed_key or (_local_api_key() if provider_id == "openai" else "")
+    if typed_key:
+        st.caption("Kept only in this browser session.")
     elif api_key:
         st.caption("Using the local API.txt key.")
+    st.caption(f"[Get your {pcfg['name']} API key ↗]({pcfg['key_url']})")
+    with st.expander("Model"):
+        st.text_input(
+            "Model name", key=model_widget,
+            on_change=_remember, args=(model_widget, "_saved_models"),
+            help=f"Default: {pcfg['chat_model']}. Change it if {pcfg['name']} renames "
+                 "or retires the model, or to use a different one.",
+        )
+        if not pcfg.get("embed_model"):
+            st.caption(f"{pcfg['name']} has no embeddings API, so skill matching uses "
+                       "local text similarity instead of meaning-based similarity.")
     st.markdown("---")
 
     st.markdown("### ⚙️ Settings")
@@ -322,23 +359,26 @@ with st.sidebar:
 # ----------------------------------------------------------------------------
 if not api_key:
     st.markdown(
-        """
+        f"""
         <div class="card">
-          <h3 style="margin-top:0;">🔑 Add your OpenAI API key to get started</h3>
-          <p>This app uses OpenAI to analyse your profile, match jobs and write resumes.
-             Paste your own API key in the <b>sidebar</b> (open it with the <b>›</b> arrow
-             at the top-left on mobile).</p>
+          <h3 style="margin-top:0;">🔑 Add an AI provider key to get started</h3>
+          <p>This app uses AI to analyse your profile, match jobs and write resumes.
+             Choose a provider and paste your own API key in the <b>sidebar</b> (open it
+             with the <b>›</b> arrow at the top-left on mobile).</p>
+          <p><b>Free options:</b>
+             <a href="{PROVIDERS['gemini']['key_url']}" target="_blank">Google Gemini ↗</a> and
+             <a href="{PROVIDERS['groq']['key_url']}" target="_blank">Groq ↗</a> both give free
+             API keys (with rate limits). OpenAI and xAI Grok are paid.</p>
           <p>Your key stays in your browser session only. It is not stored on the server,
-             and usage is billed to your own OpenAI account.</p>
-          <p><a href="https://platform.openai.com/api-keys" target="_blank">Create an API key ↗</a></p>
+             and any usage is billed to your own account with that provider.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
     st.stop()
-elif not api_key.startswith("sk-"):
-    st.warning("That doesn't look like an OpenAI API key (they start with `sk-`). "
-               "AI features will fail until a valid key is entered.")
+elif not api_key.startswith(pcfg["key_prefix"]):
+    st.warning(f"That doesn't look like a {pcfg['name']} API key (they start with "
+               f"`{pcfg['key_prefix']}`). AI features will fail until a valid key is entered.")
 
 
 # ----------------------------------------------------------------------------
@@ -892,7 +932,8 @@ with tab_eval:
             })
         st.dataframe(rows, use_container_width=True, hide_index=True)
         st.caption("Cost is an approximate estimate at current public gpt-4o / "
-                   "text-embedding-3-small rates; token counts are exact (from the API).")
+                   "text-embedding-3-small rates; other models (e.g. free-tier Gemini "
+                   "or Groq) show $0. Token counts are exact (from the API).")
         if st.button("Reset performance metrics"):
             reset_metrics()
             st.rerun()

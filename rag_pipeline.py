@@ -4,7 +4,7 @@ RAG pipeline for the AI Job Application Assistant.
 Responsibilities:
 - Extract plain text from uploaded documents (.txt, .pdf, .docx).
 - Chunk text into overlapping windows.
-- Embed text with OpenAI text-embedding-3-small.
+- Embed text via the selected provider (OpenAI / Gemini, or a local fallback).
 - Compute cosine similarity and retrieve the most relevant chunks.
 - Provide a reusable semantic-similarity helper used by the skill matcher so that
   matching goes BEYOND simple keyword overlap (e.g. "ML" ~ "Machine Learning").
@@ -146,8 +146,12 @@ def retrieve_relevant_chunks(query, chunks, chunk_embeddings, api_key, top_k=5):
     """Return the top_k chunks most semantically similar to the query."""
     if not chunks or not chunk_embeddings:
         return []
-    from llm_provider import get_provider
+    from llm_provider import get_provider, local_embed
     q_emb = get_provider(api_key).embed([query])[0]
+    if len(q_emb) != len(chunk_embeddings[0]):
+        # Provider switched to local embeddings since the chunks were embedded.
+        q_emb = local_embed(query)
+        chunk_embeddings = [local_embed(c) for c in chunks]
     scored = []
     for chunk, emb in zip(chunks, chunk_embeddings):
         scored.append((cosine_similarity(q_emb, emb), chunk))
@@ -309,8 +313,9 @@ def semantic_skill_signal(jd_skills, profile_skills, api_key, threshold=0.55):
             for s in jd_skills
         ]
 
-    jd_embs = get_embeddings_batch(jd_skills, api_key)
-    prof_embs = get_embeddings_batch(profile_names, api_key)
+    # One call for both lists so every vector comes from the same embedding method.
+    all_embs = get_embeddings_batch(list(jd_skills) + profile_names, api_key)
+    jd_embs, prof_embs = all_embs[:len(jd_skills)], all_embs[len(jd_skills):]
 
     signal = []
     for jd_skill, jd_emb in zip(jd_skills, jd_embs):

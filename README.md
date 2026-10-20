@@ -20,15 +20,28 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Each user pastes their own OpenAI API key in the sidebar. For local development you
-can instead put your key in `API.txt` (one line); it is git-ignored and never deployed.
+Each user picks an AI provider in the sidebar and pastes their own API key:
+
+| Provider | Cost | Get a key | Default model | Embeddings |
+|----------|------|-----------|---------------|------------|
+| Google Gemini | Free tier (rate-limited) | <https://aistudio.google.com/apikey> | `gemini-3.8-flash` | `gemini-embedding-001` |
+| Groq | Free tier (rate-limited) | <https://console.groq.com/keys> | `openai/gpt-oss-120b` | local fallback |
+| OpenAI | Paid | <https://platform.openai.com/api-keys> | `gpt-4o` | `text-embedding-3-small` |
+| xAI Grok | Paid (trial credits) | <https://console.x.ai> | `grok-4.3` | local fallback |
+
+All four are called through their OpenAI-compatible APIs (`llm_provider.py`). The model
+can be changed per provider under **Model** in the sidebar. Providers without an
+embeddings API use a local text-similarity fallback for skill matching and job ranking.
+
+For local development you can put an OpenAI key in `API.txt` (one line); it is
+git-ignored and never deployed.
 
 ---
 
 ## Deploying to Streamlit Community Cloud
 
 The app is multi-user safe: every visitor gets a private session workspace and uses
-their own OpenAI key, so no secrets need to be configured on the server.
+their own provider key, so no secrets need to be configured on the server.
 
 1. Push this folder to a GitHub repository (`API.txt` and `data_store.json` are
    excluded by `.gitignore`).
@@ -169,4 +182,6 @@ next application in Tab 1 uses the updated profile.
 * Extraction quality depends on the uploaded document; scanned/image PDFs without a
   text layer will not extract well.
 * Matching and analysis quality depend on the LLM and the richness of the JD/notes.
-* Embeddings and chat calls require network access and a valid OpenAI key.
+* Embeddings and chat calls require network access and a valid key for the chosen
+  provider. Free tiers have per-minute and per-day limits; a busy session may need to
+  wait a minute between actions.
